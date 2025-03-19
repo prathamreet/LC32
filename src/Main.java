@@ -34,4 +34,9 @@ cd ..
 javac src/*.java -d out
 cd out
 java main
+or---
+javac -d out src/*.java
+jar cvfe LANChat.jar Main -C out .
+java -jar LANChat.jar
+
  */
