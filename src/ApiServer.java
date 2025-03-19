@@ -10,7 +10,9 @@ import java.net.MulticastSocket;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
@@ -19,6 +21,7 @@ public class ApiServer {
     private HttpServer server;
     private final MulticastManager multicastManager;
     private final List<String> messages = new ArrayList<>();
+    private final Set<String> sentMessages = new HashSet<>(); // Track sent messages
     private final Thread receiveThread;
 
     public ApiServer(int port, String nickname) throws IOException {
@@ -42,8 +45,17 @@ public class ApiServer {
                     multicastSocket.receive(packet);
                     String message = new String(packet.getData(), 0, packet.getLength());
                     System.out.println("Received message: " + message);
+                    
                     synchronized (messages) {
-                        messages.add(message);
+                        // Only add the message if we haven't sent it ourselves
+                        if (!sentMessages.contains(message)) {
+                            messages.add(message);
+                            System.out.println("Added new message to list: " + message);
+                        } else {
+                            System.out.println("Ignoring message we sent ourselves: " + message);
+                            // Remove from sent messages to keep the set from growing too large
+                            sentMessages.remove(message);
+                        }
                     }
                 }
             } catch (IOException e) {
@@ -61,7 +73,6 @@ public class ApiServer {
         System.out.println("MulticastManager started in a separate thread");
     }
 
-    // Missing method: startServer()
     private void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
         
@@ -77,7 +88,6 @@ public class ApiServer {
         System.out.println("You can now access the chat from your Next.js application");
     }
 
-    // Missing method: setCorsHeaders()
     private void setCorsHeaders(HttpExchange exchange) {
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -174,6 +184,13 @@ public class ApiServer {
             // Format the message with the provided username, not Java's
             String formattedMessage = username + ": " + message;
             
+            // Add the message to the messages list first
+            synchronized (messages) {
+                messages.add(formattedMessage);
+                // Add to sent messages set so we don't duplicate it later
+                sentMessages.add(formattedMessage);
+            }
+            
             // Send the raw formatted message via multicast
             try {
                 byte[] buffer = formattedMessage.getBytes();
@@ -183,11 +200,6 @@ public class ApiServer {
                     MulticastManager.PORT
                 );
                 multicastManager.socket.send(packet);
-                
-                // Add to our local messages list
-                synchronized (messages) {
-                    messages.add(formattedMessage);
-                }
             } catch (IOException e) {
                 System.err.println("Error sending message: " + e.getMessage());
                 e.printStackTrace();

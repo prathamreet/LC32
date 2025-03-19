@@ -26,3 +26,12 @@ public class Main {
         }
     }
 }
+
+
+
+/*
+cd ..
+javac src/*.java -d out
+cd out
+java main
+ */
