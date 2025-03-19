@@ -2,7 +2,9 @@
 const Header = ({ nickname, status }) => {
     return (
         <header className="bg-blue-500 text-white p-4 flex justify-between items-center">
-            <h1 className="text-xl font-bold">LAN Chat Application</h1>
+            <h1 className="text-xl font-bold">
+                {nickname ? `${nickname}'s Chat Room` : "LAN Chat Application"}
+            </h1>
             <div className="flex items-center space-x-4">
                 {status && (
                     <div className="bg-blue-600 px-3 py-1 rounded text-sm">

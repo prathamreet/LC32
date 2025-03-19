@@ -62,14 +62,19 @@ export default function Home() {
 
         try {
             setError(null);
-            const formattedMessage = `${nickname}: ${message}`;
+            
+            // Send the username and message as a JSON object
+            const messageData = {
+                username: nickname,
+                message: message
+            };
             
             const response = await fetch('http://localhost:8080/api/sendMessage', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify(formattedMessage),
+                body: JSON.stringify(messageData),
             });
             
             if (!response.ok) {
@@ -90,7 +95,11 @@ export default function Home() {
                     <span className="block sm:inline">{error}</span>
                 </div>
             )}
-            <ChatWindow messages={messages} onSendMessage={handleSendMessage} />
+            <ChatWindow 
+                messages={messages} 
+                onSendMessage={handleSendMessage}
+                nickname={nickname} 
+            />
         </div>
     );
 }

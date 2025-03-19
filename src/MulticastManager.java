@@ -27,6 +27,7 @@ public class MulticastManager {
 
     public void sendMessage(String message) {
         try {
+            // For direct use from the ChatWindow, still include the nickname
             String fullMessage = nickname + ": " + message;
             byte[] buffer = fullMessage.getBytes();
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);

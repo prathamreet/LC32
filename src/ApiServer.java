@@ -6,6 +6,9 @@ import java.io.OutputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.InetSocketAddress;
+import java.net.MulticastSocket;
+import java.net.DatagramPacket;
+import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -16,28 +19,49 @@ public class ApiServer {
     private HttpServer server;
     private final MulticastManager multicastManager;
     private final List<String> messages = new ArrayList<>();
+    private final Thread receiveThread;
 
     public ApiServer(int port, String nickname) throws IOException {
         this.port = port;
         
-        // Create a MulticastManager with a custom message receiver
-        this.multicastManager = new MulticastManager(nickname, null) {
-            @Override
-            public void receiveMessage(String message) {
-                synchronized (messages) {
-                    messages.add(message);
-                    System.out.println("Added message to list: " + message);
+        // Create a MulticastManager that doesn't add messages to the list
+        // We'll handle message reception manually through a separate multicast socket
+        this.multicastManager = new MulticastManager(nickname, null);
+        
+        // Start the multicast receiver in a separate thread
+        receiveThread = new Thread(() -> {
+            try {
+                System.out.println("Starting to receive multicast messages...");
+                MulticastSocket multicastSocket = new MulticastSocket(MulticastManager.PORT);
+                InetAddress group = InetAddress.getByName(MulticastManager.MULTICAST_GROUP);
+                multicastSocket.joinGroup(group);
+                byte[] buffer = new byte[1024];
+                
+                while (!Thread.currentThread().isInterrupted()) {
+                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                    multicastSocket.receive(packet);
+                    String message = new String(packet.getData(), 0, packet.getLength());
+                    System.out.println("Received message: " + message);
+                    synchronized (messages) {
+                        messages.add(message);
+                    }
+                }
+            } catch (IOException e) {
+                if (!Thread.currentThread().isInterrupted()) {
+                    System.err.println("Error receiving multicast messages: " + e.getMessage());
+                    e.printStackTrace();
                 }
             }
-        };
+        });
+        receiveThread.setDaemon(true);
+        receiveThread.start();
         
         startServer();
         
-        // Start receiving messages in a separate thread
-        new Thread(() -> multicastManager.receiveMessages()).start();
         System.out.println("MulticastManager started in a separate thread");
     }
 
+    // Missing method: startServer()
     private void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
         
@@ -51,6 +75,13 @@ public class ApiServer {
         
         System.out.println("API Server started on port " + port);
         System.out.println("You can now access the chat from your Next.js application");
+    }
+
+    // Missing method: setCorsHeaders()
+    private void setCorsHeaders(HttpExchange exchange) {
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
     }
 
     private class GetMessagesHandler implements HttpHandler {
@@ -98,20 +129,69 @@ public class ApiServer {
             }
             
             // Read the message from the request body
-            String message;
+            String messageData;
             try (BufferedReader br = new BufferedReader(new InputStreamReader(exchange.getRequestBody()))) {
-                message = br.lines().collect(Collectors.joining());
+                messageData = br.lines().collect(Collectors.joining());
             }
             
             // Remove quotes if the message is wrapped in them
-            if (message.startsWith("\"") && message.endsWith("\"")) {
-                message = message.substring(1, message.length() - 1);
+            if (messageData.startsWith("\"") && messageData.endsWith("\"")) {
+                messageData = messageData.substring(1, messageData.length() - 1);
             }
             
-            System.out.println("Sending message: " + message);
+            // Parse the JSON to get username and message
+            // Format should be: {"username": "name", "message": "text"}
+            String username = "";
+            String message = messageData;
             
-            // Send the message via multicast
-            multicastManager.sendMessage(message);
+            // Check if it's JSON format
+            if (messageData.startsWith("{") && messageData.endsWith("}")) {
+                try {
+                    // Simple JSON parsing (without external libraries)
+                    messageData = messageData.substring(1, messageData.length() - 1);
+                    String[] parts = messageData.split(",");
+                    for (String part : parts) {
+                        String[] keyValue = part.split(":");
+                        if (keyValue.length == 2) {
+                            String key = keyValue[0].trim().replace("\"", "");
+                            String value = keyValue[1].trim().replace("\"", "");
+                            
+                            if (key.equals("username")) {
+                                username = value;
+                            } else if (key.equals("message")) {
+                                message = value;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    System.err.println("Error parsing JSON: " + e.getMessage());
+                    // If parsing fails, use the entire message as is
+                }
+            }
+            
+            System.out.println("Sending message from " + username + ": " + message);
+            
+            // Format the message with the provided username, not Java's
+            String formattedMessage = username + ": " + message;
+            
+            // Send the raw formatted message via multicast
+            try {
+                byte[] buffer = formattedMessage.getBytes();
+                DatagramPacket packet = new DatagramPacket(
+                    buffer, buffer.length, 
+                    multicastManager.group, 
+                    MulticastManager.PORT
+                );
+                multicastManager.socket.send(packet);
+                
+                // Add to our local messages list
+                synchronized (messages) {
+                    messages.add(formattedMessage);
+                }
+            } catch (IOException e) {
+                System.err.println("Error sending message: " + e.getMessage());
+                e.printStackTrace();
+            }
             
             // Send success response
             String response = "{\"status\":\"success\"}";
@@ -126,16 +206,14 @@ public class ApiServer {
         }
     }
     
-    private void setCorsHeaders(HttpExchange exchange) {
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
-    }
-
     public void stop() {
         if (server != null) {
             server.stop(0);
             System.out.println("API Server stopped");
+        }
+        
+        if (receiveThread != null) {
+            receiveThread.interrupt();
         }
     }
 }
