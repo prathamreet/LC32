@@ -1,5 +1,7 @@
 import java.io.IOException;
 import java.net.*;
+import java.util.Date;
+import java.text.SimpleDateFormat;
 
 public class MulticastManager {
     private static final String MULTICAST_GROUP = "230.0.0.1";
@@ -7,10 +9,12 @@ public class MulticastManager {
     private DatagramSocket socket;
     private InetAddress group;
     private String nickname;
+    private String clientId;
     private ChatWindow chatWindow;
 
-    public MulticastManager(String nickname, ChatWindow chatWindow) {
+    public MulticastManager(String nickname, String clientId, ChatWindow chatWindow) {
         this.nickname = nickname;
+        this.clientId = clientId;
         this.chatWindow = chatWindow;
         setupNetworking();
     }
@@ -26,8 +30,20 @@ public class MulticastManager {
 
     public void sendMessage(String message) {
         try {
-            String fullMessage = nickname + ": " + message;
+            String time = new SimpleDateFormat("HH:mm").format(new Date());
+            String fullMessage = clientId + "|[" + time + "] " + nickname + ": " + message;
             byte[] buffer = fullMessage.getBytes();
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
+            socket.send(packet);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void sendPresence() {
+        try {
+            String presenceMessage = clientId + "|presence|" + nickname;
+            byte[] buffer = presenceMessage.getBytes();
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
             socket.send(packet);
         } catch (IOException e) {
@@ -42,8 +58,13 @@ public class MulticastManager {
             while (true) {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 multicastSocket.receive(packet);
-                String message = new String(packet.getData(), 0, packet.getLength());
-                chatWindow.appendMessage(message);
+                String received = new String(packet.getData(), 0, packet.getLength());
+                String[] parts = received.split("\\|", 3);
+                if (parts.length == 3 && "presence".equals(parts[1])) {
+                    chatWindow.updateUserList(parts[2], System.currentTimeMillis());
+                } else if (parts.length == 2 && !parts[0].equals(clientId)) {
+                    chatWindow.appendMessage(parts[1]); // Pass the message part, e.g., "[HH:mm] nickname: message"
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
