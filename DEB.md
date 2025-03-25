@@ -97,6 +97,3 @@ lc32
 ```
 
 ---
-
-## **🚀 Done!**
-Now, users can install your `.deb` package and start the chat application by simply running `lc32` from the terminal. 🎉
