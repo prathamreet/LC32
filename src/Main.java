@@ -1,9 +1,10 @@
-import javax.swing.*;
+import java.util.Scanner;
 
 public class Main {
     private static final int API_PORT = 8080;
 
     public static void main(String[] args) {
+<<<<<<< HEAD
         // No more GUI dialog prompts - just start the API server directly
         try {
             System.out.println("Starting LAN Chat API server on port " + API_PORT);
@@ -40,3 +41,16 @@ jar cvfe LANChat.jar Main -C out .
 java -jar LANChat.jar
 
  */
+=======
+        Scanner scanner = new Scanner(System.in);
+        System.out.print("Enter your nickname: ");
+        String nickname = scanner.nextLine().trim();
+        if (!nickname.isEmpty()) {
+            new ChatWindow(nickname);
+        } else {
+            System.out.println("Nickname cannot be empty. Exiting.");
+            System.exit(0);
+        }
+    }
+}
+>>>>>>> cli
