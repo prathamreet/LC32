@@ -40,6 +40,17 @@ public class MulticastManager {
         }
     }
 
+    public void sendPrivateMessage(String targetNickname, String message) {
+        try {
+            String fullMessage = clientId + "|pm|" + targetNickname + "|" + message;
+            byte[] buffer = fullMessage.getBytes();
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
+            socket.send(packet);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     public void sendPresence() {
         try {
             String presenceMessage = clientId + "|presence|" + nickname;
@@ -59,11 +70,18 @@ public class MulticastManager {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 multicastSocket.receive(packet);
                 String received = new String(packet.getData(), 0, packet.getLength());
-                String[] parts = received.split("\\|", 3);
-                if (parts.length == 3 && "presence".equals(parts[1])) {
+                String[] parts = received.split("\\|", 4);
+                if (parts.length == 4 && "pm".equals(parts[1])) {
+                    String senderClientId = parts[0];
+                    String targetNickname = parts[2];
+                    String message = parts[3];
+                    if (targetNickname.equals(nickname) && !senderClientId.equals(clientId)) {
+                        chatWindow.appendMessage(message);
+                    }
+                } else if (parts.length == 3 && "presence".equals(parts[1])) {
                     chatWindow.updateUserList(parts[2], System.currentTimeMillis());
                 } else if (parts.length == 2 && !parts[0].equals(clientId)) {
-                    chatWindow.appendMessage(parts[1]); // Pass the message part, e.g., "[HH:mm] nickname: message"
+                    chatWindow.appendMessage(parts[1]);
                 }
             }
         } catch (IOException e) {
