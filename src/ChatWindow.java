@@ -113,4 +113,12 @@ public class ChatWindow {
     public String getClientId() {
         return clientId;
     }
+
+    public static void main(String[] args) {
+        if (args.length != 1) {
+            System.out.println("Usage: java ChatWindow <nickname>");
+            return;
+        }
+        new ChatWindow(args[0]);
+    }
 }

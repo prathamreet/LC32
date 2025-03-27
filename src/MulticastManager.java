@@ -32,10 +32,11 @@ public class MulticastManager {
         try {
             String time = new SimpleDateFormat("HH:mm").format(new Date());
             String fullMessage = clientId + "|[" + time + "] " + nickname + ": " + message;
-            byte[] buffer = fullMessage.getBytes();
+            String encryptedMessage = EncryptionUtils.encrypt(fullMessage);
+            byte[] buffer = encryptedMessage.getBytes();
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
             socket.send(packet);
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -43,10 +44,11 @@ public class MulticastManager {
     public void sendPrivateMessage(String targetNickname, String message) {
         try {
             String fullMessage = clientId + "|pm|" + targetNickname + "|" + message;
-            byte[] buffer = fullMessage.getBytes();
+            String encryptedMessage = EncryptionUtils.encrypt(fullMessage);
+            byte[] buffer = encryptedMessage.getBytes();
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
             socket.send(packet);
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -54,10 +56,11 @@ public class MulticastManager {
     public void sendPresence() {
         try {
             String presenceMessage = clientId + "|presence|" + nickname;
-            byte[] buffer = presenceMessage.getBytes();
+            String encryptedMessage = EncryptionUtils.encrypt(presenceMessage);
+            byte[] buffer = encryptedMessage.getBytes();
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
             socket.send(packet);
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -69,7 +72,8 @@ public class MulticastManager {
             while (true) {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 multicastSocket.receive(packet);
-                String received = new String(packet.getData(), 0, packet.getLength());
+                String encryptedReceived = new String(packet.getData(), 0, packet.getLength());
+                String received = EncryptionUtils.decrypt(encryptedReceived);
                 String[] parts = received.split("\\|", 4);
                 if (parts.length == 4 && "pm".equals(parts[1])) {
                     String senderClientId = parts[0];
@@ -84,7 +88,7 @@ public class MulticastManager {
                     chatWindow.appendMessage(parts[1]);
                 }
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }
