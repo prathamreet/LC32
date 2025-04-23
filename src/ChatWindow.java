@@ -1,44 +1,45 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 
+/**
+ * Swing-based chat window. 
+ * Sends via MulticastManager, displays decrypted messages.
+ */
 public class ChatWindow {
-    private JTextArea chatArea;
-    private JTextField messageField;
-    private String nickname;
-    private MulticastManager multicastManager;
+    private final JTextArea chatArea;
+    private final JTextField messageField;
+    private final MulticastManager multicastManager;
 
     public ChatWindow(String nickname) {
-        this.nickname = nickname;
         multicastManager = new MulticastManager(nickname, this);
-        setupUI();
-        new Thread(multicastManager::receiveMessages).start();
-    }
 
-    private void setupUI() {
-        JFrame frame = new JFrame("LAN Chat - " + nickname);
-        frame.setSize(400, 500);
+        // Build UI
+        JFrame frame = new JFrame("LAN Chat – " + nickname);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setLayout(new BorderLayout());
+        frame.setSize(400, 500);
 
         chatArea = new JTextArea();
         chatArea.setEditable(false);
-        JScrollPane scrollPane = new JScrollPane(chatArea);
-        frame.add(scrollPane, BorderLayout.CENTER);
+        frame.add(new JScrollPane(chatArea), BorderLayout.CENTER);
 
         messageField = new JTextField();
-        messageField.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                multicastManager.sendMessage(messageField.getText());
+        messageField.addActionListener((ActionEvent e) -> {
+            String txt = messageField.getText().trim();
+            if (!txt.isEmpty()) {
+                multicastManager.sendMessage(txt);
                 messageField.setText("");
             }
         });
         frame.add(messageField, BorderLayout.SOUTH);
+
         frame.setVisible(true);
+
+        // Start background receive
+        new Thread(multicastManager::receiveMessages, "Receiver-Thread").start();
     }
 
+    /** Appends one line of text to the chat area. */
     public void appendMessage(String message) {
         chatArea.append(message + "\n");
     }
