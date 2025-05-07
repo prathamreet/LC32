@@ -23,10 +23,46 @@ public class MulticastManager {
 
     private void setupNetworking() {
         try {
-            socket = new DatagramSocket();
-            group  = InetAddress.getByName(MULTICAST_GROUP);
+            // Create a socket that's bound to any available port
+            socket = new DatagramSocket(null);
+            socket.setReuseAddress(true);
+            socket.bind(new InetSocketAddress(0));
+            socket.setSoTimeout(30000); // 30 second timeout
+            
+            // Get the multicast group address
+            group = InetAddress.getByName(MULTICAST_GROUP);
+            
+            // Print network information for debugging
+            System.out.println("Multicast group: " + MULTICAST_GROUP);
+            System.out.println("Port: " + PORT);
+            System.out.println("Local address: " + socket.getLocalAddress());
+            System.out.println("Local port: " + socket.getLocalPort());
+            
+            // Update status bar with more detailed network information
+            String networkDetails = "Multicast: " + MULTICAST_GROUP + ":" + PORT + 
+                                   " | Local: " + socket.getLocalAddress() + ":" + socket.getLocalPort() +
+                                   " | Socket: " + (socket.isBound() ? "Bound" : "Not Bound") +
+                                   (socket.isConnected() ? ", Connected" : ", Not Connected") +
+                                   " | Timeout: " + socket.getSoTimeout() + "ms" +
+                                   " | TTL: " + socket.getTrafficClass() +
+                                   " | Buffer: " + socket.getReceiveBufferSize() + "B";
+            chatWindow.updateNetworkStatus(networkDetails);
+            
+            // Log all network interfaces for debugging
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface nif = interfaces.nextElement();
+                if (nif.isUp()) {
+                    System.out.println("Interface: " + nif.getDisplayName() + 
+                                      ", Multicast: " + nif.supportsMulticast() +
+                                      ", Loopback: " + nif.isLoopback());
+                }
+            }
+            
         } catch (IOException e) {
             e.printStackTrace();
+            SwingUtilities.invokeLater(() -> 
+                chatWindow.appendSystemMessage("Error setting up network: " + e.getMessage()));
         }
     }
 
@@ -42,38 +78,233 @@ public class MulticastManager {
             e.printStackTrace();
         }
     }
+    
+    /** Send a heartbeat to let others know we're online */
+    public void sendHeartbeat() {
+        try {
+            String heartbeat = "HEARTBEAT:" + nickname;
+            String encrypted = EncryptionUtils.encrypt(heartbeat);
+            byte[] buffer = encrypted.getBytes();
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
+            socket.send(packet);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    /** Send a goodbye message when leaving */
+    public void sendGoodbye() {
+        try {
+            String goodbye = "GOODBYE:" + nickname;
+            String encrypted = EncryptionUtils.encrypt(goodbye);
+            byte[] buffer = encrypted.getBytes();
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
+            socket.send(packet);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     /** Continuously listen, decrypt, and forward to GUI. */
     public void receiveMessages() {
-        try (MulticastSocket mcast = new MulticastSocket(PORT)) {
-            // Select a working IPv4 interface
-            NetworkInterface nif = null;
-            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
-            while (interfaces.hasMoreElements()) {
-                NetworkInterface i = interfaces.nextElement();
-                if (i.isUp() && !i.isLoopback() && i.supportsMulticast()) {
-                    nif = i;
-                    break;
+        try {
+            // Create a new MulticastSocket with specific settings for better compatibility
+            MulticastSocket mcast = new MulticastSocket(PORT);
+            mcast.setReuseAddress(true);
+            mcast.setSoTimeout(0); // No timeout for receiving
+            
+            // Try multiple network interfaces if needed
+            boolean joinedGroup = false;
+            
+            // First try the specific interface finder
+            NetworkInterface nif = findMulticastInterface();
+            if (nif != null) {
+                try {
+                    InetSocketAddress groupAddress = new InetSocketAddress(group, PORT);
+                    mcast.joinGroup(groupAddress, nif);
+                    // Update status bar with detailed network information
+                    try {
+                        Enumeration<InetAddress> addresses = nif.getInetAddresses();
+                        StringBuilder ipInfo = new StringBuilder();
+                        while (addresses.hasMoreElements()) {
+                            InetAddress addr = addresses.nextElement();
+                            if (addr instanceof Inet4Address) {
+                                ipInfo.append(addr.getHostAddress()).append(" ");
+                            }
+                        }
+                        
+                        String networkDetails = "Interface: " + nif.getDisplayName() + 
+                                              " | IP: " + ipInfo + 
+                                              " | Multicast: " + MULTICAST_GROUP + ":" + PORT +
+                                              " | MTU: " + nif.getMTU() +
+                                              " | MAC: " + formatMacAddress(nif.getHardwareAddress()) +
+                                              " | Speed: " + (nif.isVirtual() ? "Virtual" : "Physical") +
+                                              " | Status: " + (nif.isUp() ? "UP" : "DOWN") +
+                                              (nif.isLoopback() ? " (Loopback)" : "");
+                        chatWindow.updateNetworkStatus(networkDetails);
+                    } catch (Exception e) {
+                        // Fallback to simple display if error occurs
+                        chatWindow.updateNetworkStatus(nif.getDisplayName());
+                    }
+                    joinedGroup = true;
+                } catch (Exception e) {
+                    System.err.println("Failed to join multicast group on interface " + nif.getDisplayName() + ": " + e.getMessage());
                 }
             }
-            if (nif == null) throw new IOException("No multicast interface");
+            
+            // If that didn't work, try the default interface
+            if (!joinedGroup) {
+                try {
+                    mcast.joinGroup(group);
+                    // Only update status bar, don't add message to chat area
+                    chatWindow.updateNetworkStatus("Default Network Interface");
+                    joinedGroup = true;
+                } catch (Exception e) {
+                    System.err.println("Failed to join multicast group on default interface: " + e.getMessage());
+                }
+            }
+            
+            // If still not joined, try all interfaces one by one
+            if (!joinedGroup) {
+                Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+                while (interfaces.hasMoreElements() && !joinedGroup) {
+                    NetworkInterface iface = interfaces.nextElement();
+                    if (iface.isUp() && iface.supportsMulticast()) {
+                        try {
+                            InetSocketAddress groupAddress = new InetSocketAddress(group, PORT);
+                            mcast.joinGroup(groupAddress, iface);
+                            // Update status bar with detailed network information
+                            try {
+                                Enumeration<InetAddress> addresses = iface.getInetAddresses();
+                                StringBuilder ipInfo = new StringBuilder();
+                                while (addresses.hasMoreElements()) {
+                                    InetAddress addr = addresses.nextElement();
+                                    if (addr instanceof Inet4Address) {
+                                        ipInfo.append(addr.getHostAddress()).append(" ");
+                                    }
+                                }
+                                
+                                String networkDetails = "Interface: " + iface.getDisplayName() + 
+                                                      " | IP: " + ipInfo + 
+                                                      " | Multicast: " + MULTICAST_GROUP + ":" + PORT +
+                                                      " | MTU: " + iface.getMTU() +
+                                                      " | MAC: " + formatMacAddress(iface.getHardwareAddress()) +
+                                                      " | Speed: " + (iface.isVirtual() ? "Virtual" : "Physical") +
+                                                      " | Status: " + (iface.isUp() ? "UP" : "DOWN") +
+                                                      (iface.isLoopback() ? " (Loopback)" : "");
+                                chatWindow.updateNetworkStatus(networkDetails);
+                            } catch (Exception e) {
+                                // Fallback to simple display if error occurs
+                                chatWindow.updateNetworkStatus(iface.getDisplayName());
+                            }
+                            joinedGroup = true;
+                            break;
+                        } catch (Exception e) {
+                            // Continue to next interface
+                        }
+                    }
+                }
+            }
+            
+            if (!joinedGroup) {
+                // Only show error in status bar, not in chat
+                chatWindow.updateNetworkStatus("ERROR: No multicast interface found | Status: Disconnected");
+            }
 
-            SocketAddress groupAddr = new InetSocketAddress(group, PORT);
-            mcast.joinGroup(groupAddr, nif);
-
-            byte[] buffer = new byte[2048];
+            // Announce presence with compact message
+            sendMessage("joined");
+            
+            // Receive messages in a loop
+            byte[] buffer = new byte[4096]; // Larger buffer for bigger messages
             while (true) {
-                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                mcast.receive(packet);
+                try {
+                    DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+                    mcast.receive(packet);
+    
+                    String encrypted = new String(packet.getData(), 0, packet.getLength());
+                    String plaintext = EncryptionUtils.decrypt(encrypted);
 
-                String encrypted = new String(packet.getData(), 0, packet.getLength());
-                String plaintext = EncryptionUtils.decrypt(encrypted);
-
-                // Update GUI on EDT
-                SwingUtilities.invokeLater(() -> chatWindow.appendMessage(plaintext));
+                    // Handle special messages
+                    if (plaintext.startsWith("HEARTBEAT:")) {
+                        // Extract username from heartbeat
+                        String user = plaintext.substring("HEARTBEAT:".length());
+                        // Update user list
+                        SwingUtilities.invokeLater(() -> chatWindow.addUserToList(user));
+                    } else if (plaintext.startsWith("GOODBYE:")) {
+                        // Extract username from goodbye message
+                        String user = plaintext.substring("GOODBYE:".length());
+                        // Remove from user list
+                        SwingUtilities.invokeLater(() -> chatWindow.removeUserFromList(user));
+                    } else {
+                        // Regular message - update GUI on EDT
+                        SwingUtilities.invokeLater(() -> chatWindow.appendMessage(plaintext));
+                    }
+                } catch (SocketTimeoutException e) {
+                    // Timeout is normal, just continue
+                    continue;
+                } catch (Exception e) {
+                    // Log error but continue receiving
+                    System.err.println("Error processing received packet: " + e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            // Only show error in status bar, not in chat
+            chatWindow.updateNetworkStatus("ERROR: Connection failed | Exception: " + e.getClass().getSimpleName() + " | " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Format MAC address as a readable string
+     */
+    private String formatMacAddress(byte[] mac) {
+        if (mac == null) {
+            return "Unknown";
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < mac.length; i++) {
+            sb.append(String.format("%02X", mac[i]));
+            if (i < mac.length - 1) {
+                sb.append(":");
+            }
+        }
+        return sb.toString();
+    }
+    
+    /**
+     * Find a suitable network interface for multicast
+     */
+    private NetworkInterface findMulticastInterface() {
+        try {
+            // First try to find a non-loopback interface that supports multicast
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface nif = interfaces.nextElement();
+                if (nif.isUp() && !nif.isLoopback() && nif.supportsMulticast()) {
+                    // Check if it has an IPv4 address
+                    Enumeration<InetAddress> addresses = nif.getInetAddresses();
+                    while (addresses.hasMoreElements()) {
+                        InetAddress addr = addresses.nextElement();
+                        if (addr instanceof Inet4Address) {
+                            return nif;
+                        }
+                    }
+                }
+            }
+            
+            // If no suitable interface found, try loopback as last resort
+            interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface nif = interfaces.nextElement();
+                if (nif.isUp() && nif.isLoopback() && nif.supportsMulticast()) {
+                    return nif;
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
+        
+        return null;
     }
 }
