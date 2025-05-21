@@ -10,29 +10,40 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 /**
- * Custom renderer for chat messages that displays them as bubbles.
- * Supports different styles for user's messages, others' messages, and system messages.
+ * This class creates the chat bubbles that display messages in the chat.
+ * It handles different styles for your messages, others' messages, and system messages.
+ * It also includes special formatting for code blocks with syntax highlighting.
+ * 
+ * @author LC32 Team
+ * @version 1.0
  */
 public class ChatBubbleRenderer extends JPanel {
-    private static final int BUBBLE_RADIUS = 12; // Reduced from 15
-    private static final int BUBBLE_SPACING = 5; // Reduced from 10
-    private static final int AVATAR_SIZE = 24; // Reduced from 30
+    // Constants for bubble appearance
+    private static final int BUBBLE_RADIUS = 12;  // How rounded the corners are
+    private static final int BUBBLE_SPACING = 5;  // Space around the bubble
+    private static final int AVATAR_SIZE = 24;    // Size of user avatars (not currently used)
     private static final SimpleDateFormat TIME_FORMAT = new SimpleDateFormat("HH:mm");
     
-    private final String sender;
-    private final String message;
-    private final Date timestamp;
-    private final boolean isCurrentUser;
-    private final boolean isSystemMessage;
-    private final Color bubbleColor;
-    private final Color textColor;
+    // Message information
+    private final String sender;           // Who sent the message
+    private final String message;          // The message content
+    private final Date timestamp;          // When the message was sent
+    private final boolean isCurrentUser;   // Whether this is from the current user
+    private final boolean isSystemMessage; // Whether this is a system message
+    private final Color bubbleColor;       // Background color for the bubble
+    private final Color textColor;         // Text color for the message
     
     // For code block copy button
-    private Rectangle codeBlockCopyButton;
-    private String codeToClipboard;
+    private Rectangle codeBlockCopyButton; // Location of the copy button
+    private String codeToClipboard;        // Code to copy when button is clicked
     
     /**
-     * Create a chat bubble for a user message
+     * Creates a chat bubble for a user message.
+     * 
+     * @param sender Who sent the message
+     * @param message The message content
+     * @param timestamp When the message was sent
+     * @param isCurrentUser Whether this is from the current user
      */
     public ChatBubbleRenderer(String sender, String message, Date timestamp, boolean isCurrentUser) {
         this.sender = sender;
@@ -41,18 +52,25 @@ public class ChatBubbleRenderer extends JPanel {
         this.isCurrentUser = isCurrentUser;
         this.isSystemMessage = false;
         
+        // Get colors from the current theme
         ThemeManager.ColorScheme theme = ThemeManager.getCurrentTheme();
+        
+        // Use different colors for my messages vs. others' messages
         this.bubbleColor = isCurrentUser ? theme.myMessageColor : theme.otherMessageColor;
         this.textColor = theme.textPrimaryColor;
         
+        // Set up the panel
         setupPanel();
         
-        // Add right-click context menu for copying
+        // Add right-click menu for copying text
         addCopyContextMenu();
     }
     
     /**
-     * Create a chat bubble for a system message
+     * Creates a chat bubble for a system message.
+     * 
+     * @param message The system message
+     * @param timestamp When the message was sent
      */
     public ChatBubbleRenderer(String message, Date timestamp) {
         this.sender = "System";
@@ -61,33 +79,44 @@ public class ChatBubbleRenderer extends JPanel {
         this.isCurrentUser = false;
         this.isSystemMessage = true;
         
+        // Get colors from the current theme
         ThemeManager.ColorScheme theme = ThemeManager.getCurrentTheme();
+        
+        // Use special colors for system messages
         this.bubbleColor = theme.systemMessageColor;
         this.textColor = theme.textPrimaryColor;
         
+        // Set up the panel
         setupPanel();
         
-        // Add right-click context menu for copying
+        // Add right-click menu for copying text
         addCopyContextMenu();
     }
     
+    /**
+     * Sets up the panel and adds mouse listeners.
+     */
     private void setupPanel() {
+        // Make the panel background transparent
         setOpaque(false);
         setLayout(new BorderLayout());
         
-        // Use smaller border for system messages to make them more compact
+        // Use different spacing for system messages vs. regular messages
         if (isSystemMessage) {
+            // System messages are more compact
             setBorder(new EmptyBorder(2, BUBBLE_SPACING, 2, BUBBLE_SPACING));
         } else {
+            // Regular messages have more space
             setBorder(new EmptyBorder(BUBBLE_SPACING, BUBBLE_SPACING, BUBBLE_SPACING, BUBBLE_SPACING));
         }
         
-        // Add mouse listener for code block copy button
+        // Add a mouse listener for the code block copy button
         addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
+                // Check if the click was on the copy button
                 if (codeBlockCopyButton != null && codeBlockCopyButton.contains(e.getPoint())) {
-                    // Copy code to clipboard
+                    // Copy the code to the clipboard
                     if (codeToClipboard != null && !codeToClipboard.isEmpty()) {
                         copyMessageToClipboard(codeToClipboard);
                     }
@@ -104,15 +133,16 @@ public class ChatBubbleRenderer extends JPanel {
             
             @Override
             public void mouseExited(MouseEvent e) {
-                // Reset cursor
+                // Reset cursor when not over the copy button
                 setCursor(new Cursor(Cursor.DEFAULT_CURSOR));
             }
         });
         
-        // Add mouse motion listener to change cursor when over the copy button
+        // Add a mouse motion listener to change the cursor when over the copy button
         addMouseMotionListener(new MouseAdapter() {
             @Override
             public void mouseMoved(MouseEvent e) {
+                // Check if the mouse is over the copy button
                 if (codeBlockCopyButton != null && codeBlockCopyButton.contains(e.getPoint())) {
                     setCursor(new Cursor(Cursor.HAND_CURSOR));
                 } else {
@@ -123,26 +153,27 @@ public class ChatBubbleRenderer extends JPanel {
     }
     
     /**
-     * Add a context menu for copying message text
+     * Adds a right-click context menu for copying message text.
      */
     private void addCopyContextMenu() {
+        // Create a popup menu
         JPopupMenu popupMenu = new JPopupMenu();
         
-        // Add copy message option
+        // Add an option to copy just the message
         JMenuItem copyItem = new JMenuItem("Copy Message");
         copyItem.addActionListener(e -> {
             copyMessageToClipboard(message);
         });
         popupMenu.add(copyItem);
         
-        // Add copy with sender option
+        // Add an option to copy the message with the sender's name
         JMenuItem copyWithSenderItem = new JMenuItem("Copy with Sender");
         copyWithSenderItem.addActionListener(e -> {
             copyMessageToClipboard(sender + ": " + message);
         });
         popupMenu.add(copyWithSenderItem);
         
-        // For code blocks, add special copy option
+        // For code blocks, add a special option to copy just the code
         if (message != null && message.contains("```")) {
             int firstDelimiter = message.indexOf("```");
             int lastDelimiter = message.lastIndexOf("```");
@@ -150,7 +181,7 @@ public class ChatBubbleRenderer extends JPanel {
             if (firstDelimiter >= 0 && lastDelimiter > firstDelimiter) {
                 JMenuItem copyCodeItem = new JMenuItem("Copy Code Only");
                 copyCodeItem.addActionListener(e -> {
-                    // Extract just the code part
+                    // Extract just the code part (between the delimiters)
                     int firstNewline = message.indexOf('\n', firstDelimiter);
                     if (firstNewline > 0 && firstNewline < lastDelimiter) {
                         String code = message.substring(firstNewline + 1, lastDelimiter);
@@ -161,7 +192,7 @@ public class ChatBubbleRenderer extends JPanel {
             }
         }
         
-        // Add mouse listener to show popup menu on right-click
+        // Add a mouse listener to show the popup menu on right-click
         addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
@@ -184,27 +215,32 @@ public class ChatBubbleRenderer extends JPanel {
     }
     
     /**
-     * Copy text to clipboard
+     * Copies text to the clipboard and shows a visual confirmation.
+     * 
+     * @param text The text to copy
      */
     private void copyMessageToClipboard(String text) {
+        // Don't do anything if the text is empty
         if (text == null || text.isEmpty()) {
             return;
         }
         
         try {
-            // Get system clipboard
+            // Get the system clipboard
             Toolkit toolkit = Toolkit.getDefaultToolkit();
             Clipboard clipboard = toolkit.getSystemClipboard();
             
-            // Set clipboard contents
+            // Create a selection with the text
             StringSelection selection = new StringSelection(text);
+            
+            // Set the clipboard contents
             clipboard.setContents(selection, null);
             
-            // Visual feedback (flash the bubble)
+            // Show visual feedback by briefly changing the background color
             Color originalColor = getBackground();
             setBackground(new Color(100, 200, 100)); // Flash green
             
-            // Reset color after a short delay
+            // Reset the color after a short delay
             Timer timer = new Timer(300, evt -> {
                 setBackground(originalColor);
                 repaint();
@@ -217,23 +253,28 @@ public class ChatBubbleRenderer extends JPanel {
         }
     }
     
+    /**
+     * Draws the chat bubble with its content.
+     */
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2d = (Graphics2D) g.create();
         
-        // Enable high quality rendering
+        // Enable high quality rendering for smooth text and shapes
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g2d.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
         
+        // Calculate dimensions
         int width = getWidth();
         int height = getHeight();
         int bubbleWidth = width - 2 * BUBBLE_SPACING;
         int bubbleHeight = height - 2 * BUBBLE_SPACING;
         
         // Calculate bubble position
+        // My messages go on the right, others' on the left, system messages in center
         int x = BUBBLE_SPACING;
         if (isCurrentUser && !isSystemMessage) {
             x = width - bubbleWidth - BUBBLE_SPACING;
@@ -241,7 +282,7 @@ public class ChatBubbleRenderer extends JPanel {
             x = (width - bubbleWidth) / 2;
         }
         
-        // Draw bubble background with a slight shadow for depth
+        // Draw a slight shadow behind the bubble for depth
         Color shadowColor = new Color(0, 0, 0, 30);
         g2d.setColor(shadowColor);
         RoundRectangle2D shadow = new RoundRectangle2D.Float(
@@ -259,31 +300,30 @@ public class ChatBubbleRenderer extends JPanel {
         g2d.setStroke(new BasicStroke(1.0f));
         g2d.draw(bubble);
         
-        // Draw sender name
+        // Draw sender name for others' messages (not for my messages or system messages)
         if (!isCurrentUser && !isSystemMessage) {
             g2d.setColor(ThemeManager.getCurrentTheme().primaryColor);
             g2d.setFont(new Font("Segoe UI", Font.BOLD, 12));
             g2d.drawString(sender, x + 10, BUBBLE_SPACING + 20);
         }
         
-        // Draw message text with improved font rendering
+        // Set up the font for the message text
         g2d.setColor(textColor);
-        // Use a font that supports emoji characters
         // Use smaller font for system messages
-        Font messageFont = new Font("Segoe UI Emoji", 
+        Font messageFont = new Font("Segoe UI", 
                                    isSystemMessage ? Font.ITALIC : Font.PLAIN, 
                                    isSystemMessage ? 12 : 14);
         g2d.setFont(messageFont);
         
-        // Calculate text position
+        // Calculate where to start drawing the text
         int textY = BUBBLE_SPACING + 40;
         if (isCurrentUser) {
-            textY = BUBBLE_SPACING + 25;
+            textY = BUBBLE_SPACING + 25; // No sender name for my messages
         } else if (isSystemMessage) {
-            textY = BUBBLE_SPACING + 18; // Reduced for system messages
+            textY = BUBBLE_SPACING + 18; // Smaller for system messages
         }
         
-        // Draw message with word wrap and code block support
+        // Get font metrics for text measurements
         FontMetrics fm = g2d.getFontMetrics(messageFont);
         int textX = x + 10;
         
@@ -325,7 +365,7 @@ public class ChatBubbleRenderer extends JPanel {
                     for (int i = 0; i < line.length(); i += chunkSize) {
                         String chunk = line.substring(i, Math.min(i + chunkSize, line.length()));
                         if (i > 0) {
-                            // Add a hyphen to indicate continuation
+                            // Add an arrow to indicate continuation
                             chunk = "→ " + chunk;
                         }
                         
@@ -338,7 +378,7 @@ public class ChatBubbleRenderer extends JPanel {
                     g2d.drawString(line, textX, textY);
                     textY += fm.getHeight();
                 } else {
-                    // Line is too long, need to wrap
+                    // Line is too long, need to wrap it
                     String[] words = line.split(" ");
                     StringBuilder currentLine = new StringBuilder();
                     
@@ -360,7 +400,7 @@ public class ChatBubbleRenderer extends JPanel {
                             } else {
                                 // Single word is too long, need to break it
                                 if (word.length() > 30) {
-                                    // Break very long word
+                                    // Break very long word in half
                                     int half = word.length() / 2;
                                     g2d.drawString(word.substring(0, half) + "-", textX, textY);
                                     textY += fm.getHeight();
@@ -382,20 +422,20 @@ public class ChatBubbleRenderer extends JPanel {
             }
         }
         
-        // Draw timestamp
+        // Draw timestamp at the bottom of the bubble
         String time = TIME_FORMAT.format(timestamp);
         g2d.setFont(new Font("Segoe UI", Font.PLAIN, 10));
         g2d.setColor(new Color(150, 150, 150));
         
         int timeWidth = g2d.getFontMetrics().stringWidth(time);
         
-        // Ensure timestamp doesn't overlap with message text
-        // Add minimal padding at the bottom for the timestamp
-        textY += 8; // Reduced space for timestamp
+        // Add a small space before the timestamp
+        textY += 8;
         
+        // Position the timestamp based on message type
         int timeX = isCurrentUser ? x + bubbleWidth - timeWidth - 10 : x + 10;
         if (isSystemMessage) {
-            timeX = x + (bubbleWidth - timeWidth) / 2;
+            timeX = x + (bubbleWidth - timeWidth) / 2; // Center for system messages
         }
         
         g2d.drawString(time, timeX, textY);
@@ -404,7 +444,14 @@ public class ChatBubbleRenderer extends JPanel {
     }
     
     /**
-     * Draw a formatted code block with syntax highlighting
+     * Draws a formatted code block with syntax highlighting.
+     * 
+     * @param g2d The graphics context
+     * @param code The code to display
+     * @param language The programming language for syntax highlighting
+     * @param x The x position
+     * @param y The y position
+     * @param width The available width
      */
     private void drawCodeBlock(Graphics2D g2d, String code, String language, int x, int y, int width) {
         // Use a monospaced font for code
@@ -412,7 +459,7 @@ public class ChatBubbleRenderer extends JPanel {
         g2d.setFont(codeFont);
         FontMetrics fm = g2d.getFontMetrics(codeFont);
         
-        // Draw code block header with language and copy button
+        // Draw code block header with language name
         g2d.setColor(new Color(180, 180, 180));
         String headerText = "Code: " + language;
         g2d.drawString(headerText, x, y);
@@ -449,38 +496,45 @@ public class ChatBubbleRenderer extends JPanel {
         g2d.setColor(codeBlockBg);
         g2d.fillRect(x - 5, y - fm.getAscent(), width + 10, fm.getHeight() * (code.split("\n").length + 1));
         
-        // Draw code with basic syntax highlighting
+        // Draw code with syntax highlighting
         String[] lines = code.split("\n");
         for (String line : lines) {
-            // Apply simple syntax highlighting based on language
+            // Apply syntax highlighting based on language
             drawSyntaxHighlightedLine(g2d, line, language, x, y, width);
             y += fm.getHeight();
         }
     }
     
     /**
-     * Draw a single line of code with basic syntax highlighting
+     * Draws a single line of code with syntax highlighting.
+     * 
+     * @param g2d The graphics context
+     * @param line The line of code
+     * @param language The programming language
+     * @param x The x position
+     * @param y The y position
+     * @param width The available width
      */
     private void drawSyntaxHighlightedLine(Graphics2D g2d, String line, String language, int x, int y, int width) {
         FontMetrics fm = g2d.getFontMetrics();
-        int availableWidth = width;
         
-        // Simple syntax highlighting
+        // Handle comments (lines starting with // or #)
         if (line.trim().startsWith("//") || line.trim().startsWith("#")) {
-            // Comments
-            g2d.setColor(new Color(95, 145, 95)); // Green for comments
+            // Comments are green
+            g2d.setColor(new Color(95, 145, 95));
             g2d.drawString(line, x, y);
         } else {
-            // Split the line into tokens for highlighting
+            // For other code, highlight different parts
             StringBuilder token = new StringBuilder();
             int currentX = x;
             
+            // Process each character in the line
             for (int i = 0; i < line.length(); i++) {
                 char c = line.charAt(i);
                 
-                // Check if character is a delimiter
+                // Check if this character is a delimiter
                 if (c == ' ' || c == '(' || c == ')' || c == '{' || c == '}' || c == ';' || c == ',' || c == '.') {
-                    // Draw the accumulated token with appropriate color
+                    // Draw any accumulated token with appropriate color
                     if (token.length() > 0) {
                         g2d.setColor(getSyntaxColor(token.toString(), language));
                         g2d.drawString(token.toString(), currentX, y);
@@ -488,11 +542,12 @@ public class ChatBubbleRenderer extends JPanel {
                         token = new StringBuilder();
                     }
                     
-                    // Draw the delimiter
-                    g2d.setColor(new Color(200, 200, 200)); // Light gray for delimiters
+                    // Draw the delimiter in light gray
+                    g2d.setColor(new Color(200, 200, 200));
                     g2d.drawString(String.valueOf(c), currentX, y);
                     currentX += fm.stringWidth(String.valueOf(c));
                 } else {
+                    // Add this character to the current token
                     token.append(c);
                 }
             }
@@ -506,10 +561,14 @@ public class ChatBubbleRenderer extends JPanel {
     }
     
     /**
-     * Get appropriate color for syntax highlighting based on token and language
+     * Gets the appropriate color for syntax highlighting based on the token and language.
+     * 
+     * @param token The code token to color
+     * @param language The programming language
+     * @return The color to use for this token
      */
     private Color getSyntaxColor(String token, String language) {
-        // Keywords for common languages
+        // Common programming keywords
         String[] keywords = {"function", "var", "let", "const", "if", "else", "for", "while", "return", 
                             "class", "public", "private", "static", "void", "int", "string", "boolean",
                             "def", "import", "from", "true", "false", "null", "this", "new"};
@@ -536,6 +595,9 @@ public class ChatBubbleRenderer extends JPanel {
         return new Color(220, 220, 220); // Light gray for normal text
     }
     
+    /**
+     * Calculates the preferred size of the chat bubble based on its content.
+     */
     @Override
     public Dimension getPreferredSize() {
         // Use smaller font for system messages
@@ -629,7 +691,7 @@ public class ChatBubbleRenderer extends JPanel {
         // Calculate bubble dimensions
         int bubbleWidth = Math.min(maxWidth, textWidth + 40); // Add padding
         
-        // Reduce extra space for system messages
+        // Calculate extra height needed
         int extraHeight;
         if (isSystemMessage) {
             extraHeight = 20; // Minimal extra space for system messages
@@ -637,7 +699,7 @@ public class ChatBubbleRenderer extends JPanel {
             extraHeight = isCurrentUser ? 30 : 50; // Extra space for sender name and timestamp
         }
         
-        int bubbleHeight = fm.getHeight() * Math.max(1, lineCount) + extraHeight + 8; // Reduced to 8px for timestamp
+        int bubbleHeight = fm.getHeight() * Math.max(1, lineCount) + extraHeight + 8; // Space for timestamp
         
         // Use smaller spacing for system messages
         int spacing = isSystemMessage ? 2 : BUBBLE_SPACING;

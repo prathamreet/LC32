@@ -6,83 +6,98 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * AES-128/CBC/PKCS5Padding encryption helper.
- * Improved to handle large messages and use CBC mode with IV.
+ * This class handles the encryption and decryption of our chat messages.
+ * It uses AES-128 encryption in CBC mode to keep messages secure.
+ * 
+ * @author LC32 Team
+ * @version 1.0
  */
 public class EncryptionUtils {
-    private static final String ALGORITHM      = "AES";
-    private static final String TRANSFORMATION = "AES/CBC/PKCS5Padding"; // Changed to CBC mode
-    private static final String KEY            = "1234567890123456"; // 16-byte
-    private static final int IV_SIZE           = 16; // 16 bytes for AES
-    private static final int MAX_MESSAGE_SIZE  = 8192; // 8KB max message size
+    // The encryption settings
+    private static final String ALGORITHM      = "AES";                  // Advanced Encryption Standard
+    private static final String TRANSFORMATION = "AES/CBC/PKCS5Padding"; // CBC mode with padding
+    private static final String KEY            = "1234567890123456";     // 16-byte encryption key
+    private static final int IV_SIZE           = 16;                     // 16 bytes for AES initialization vector
+    private static final int MAX_MESSAGE_SIZE  = 8192;                   // 8KB max message size
 
     /**
-     * Encrypt a message using AES-128/CBC with a random IV
+     * Encrypts a message so it can be sent securely.
+     * 
+     * @param message The plain text message to encrypt
+     * @return The encrypted message as a Base64 string
+     * @throws Exception If encryption fails
      */
     public static String encrypt(String message) throws Exception {
-        // Check message size to prevent issues
+        // First, check if the message is too long
         if (message.length() > MAX_MESSAGE_SIZE) {
-            // Truncate very long messages to prevent encryption issues
+            // If it's too long, cut it off and add a note
             message = message.substring(0, MAX_MESSAGE_SIZE) + "... [Message truncated due to size]";
         }
         
-        // Generate a random IV for each encryption
+        // Create a random initialization vector (IV) for security
+        // Using a different IV for each message prevents pattern analysis
         byte[] iv = new byte[IV_SIZE];
         SecureRandom random = new SecureRandom();
         random.nextBytes(iv);
         IvParameterSpec ivSpec = new IvParameterSpec(iv);
         
-        // Create key spec
+        // Set up the encryption key
         SecretKeySpec keySpec = new SecretKeySpec(KEY.getBytes(), ALGORITHM);
         
-        // Initialize cipher with IV
+        // Initialize the encryption engine with our key and IV
         Cipher cipher = Cipher.getInstance(TRANSFORMATION);
         cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec);
         
         // Encrypt the message
         byte[] encrypted = cipher.doFinal(message.getBytes());
         
-        // Combine IV and encrypted data
+        // Combine the IV and encrypted data
+        // We need to include the IV with the message so it can be decrypted later
         ByteBuffer byteBuffer = ByteBuffer.allocate(iv.length + encrypted.length);
         byteBuffer.put(iv);
         byteBuffer.put(encrypted);
         
-        // Encode as Base64 for transmission
+        // Convert to Base64 for safe transmission
+        // Base64 ensures the binary data can be sent as text
         return Base64.getEncoder().encodeToString(byteBuffer.array());
     }
 
     /**
-     * Decrypt a message using AES-128/CBC
+     * Decrypts a message that was encrypted with our system.
+     * 
+     * @param encryptedMessage The Base64 encoded encrypted message
+     * @return The decrypted plain text message
+     * @throws Exception If decryption fails
      */
     public static String decrypt(String encryptedMessage) throws Exception {
         try {
-            // Decode from Base64
+            // Convert from Base64 back to binary
             byte[] encryptedData = Base64.getDecoder().decode(encryptedMessage);
             
-            // Extract IV from the beginning of the encrypted data
+            // Extract the IV from the beginning of the data
             ByteBuffer byteBuffer = ByteBuffer.wrap(encryptedData);
             byte[] iv = new byte[IV_SIZE];
             byteBuffer.get(iv);
             
-            // Extract the encrypted content (remaining bytes)
+            // Extract the actual encrypted message (everything after the IV)
             byte[] cipherText = new byte[byteBuffer.remaining()];
             byteBuffer.get(cipherText);
             
-            // Create IV and key specs
+            // Set up the decryption parameters
             IvParameterSpec ivSpec = new IvParameterSpec(iv);
             SecretKeySpec keySpec = new SecretKeySpec(KEY.getBytes(), ALGORITHM);
             
-            // Initialize cipher for decryption
+            // Initialize the decryption engine
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, keySpec, ivSpec);
             
             // Decrypt the message
             byte[] decrypted = cipher.doFinal(cipherText);
             
-            // Convert to string and return
+            // Convert from bytes back to a string
             return new String(decrypted);
         } catch (Exception e) {
-            // Provide more helpful error message
+            // If something goes wrong, log it and return an error message
             System.err.println("Decryption error: " + e.getMessage());
             return "[Decryption failed: " + e.getMessage() + "]";
         }

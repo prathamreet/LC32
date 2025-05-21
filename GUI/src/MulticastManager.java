@@ -1,35 +1,51 @@
 import java.io.IOException;
 import java.net.*;
 import java.util.Enumeration;
-import javax.swing.SwingUtilities;  // ✅ this one is missing
+import javax.swing.SwingUtilities;
 
 /**
- * Handles encrypted multicast send/receive for Swing UI.
+ * This class handles all the network communication for our chat app.
+ * It sends and receives messages using UDP multicast, which allows
+ * messages to be sent to multiple users at once on a local network.
+ * 
+ * @author LC32 Team
+ * @version 1.0
  */
 public class MulticastManager {
-    private static final String MULTICAST_GROUP = "230.0.0.1";
-    private static final int PORT = 5000;
+    // Network settings
+    private static final String MULTICAST_GROUP = "230.0.0.1"; // Special address for multicast
+    private static final int PORT = 5000;                      // Port we'll use for communication
 
-    private DatagramSocket socket;
-    private InetAddress group;
-    private final String nickname;
-    private final ChatWindow chatWindow;
+    // Network components
+    private DatagramSocket socket;    // Socket for sending messages
+    private InetAddress group;        // The multicast group address
+    private final String nickname;    // User's nickname
+    private final ChatWindow chatWindow; // Reference to the chat window for updates
 
+    /**
+     * Creates a new MulticastManager to handle network communication.
+     * 
+     * @param nickname The user's nickname
+     * @param chatWindow The chat window to update with messages
+     */
     public MulticastManager(String nickname, ChatWindow chatWindow) {
-        this.nickname   = nickname;
+        this.nickname = nickname;
         this.chatWindow = chatWindow;
-        setupNetworking();
+        setupNetworking(); // Set up the network connection
     }
 
+    /**
+     * Sets up the network connection for sending and receiving messages.
+     */
     private void setupNetworking() {
         try {
-            // Create a socket that's bound to any available port
+            // Create a socket that can send to any address
             socket = new DatagramSocket(null);
-            socket.setReuseAddress(true);
-            socket.bind(new InetSocketAddress(0));
-            socket.setSoTimeout(30000); // 30 second timeout
+            socket.setReuseAddress(true); // Allow address reuse for better compatibility
+            socket.bind(new InetSocketAddress(0)); // Bind to any available port
+            socket.setSoTimeout(30000); // 30 second timeout for operations
             
-            // Get the multicast group address
+            // Get the multicast group address we'll send messages to
             group = InetAddress.getByName(MULTICAST_GROUP);
             
             // Print network information for debugging
@@ -38,7 +54,7 @@ public class MulticastManager {
             System.out.println("Local address: " + socket.getLocalAddress());
             System.out.println("Local port: " + socket.getLocalPort());
             
-            // Update status bar with more detailed network information
+            // Show detailed network information in the status bar
             String networkDetails = "Multicast: " + MULTICAST_GROUP + ":" + PORT + 
                                    " | Local: " + socket.getLocalAddress() + ":" + socket.getLocalPort() +
                                    " | Socket: " + (socket.isBound() ? "Bound" : "Not Bound") +
@@ -48,7 +64,7 @@ public class MulticastManager {
                                    " | Buffer: " + socket.getReceiveBufferSize() + "B";
             chatWindow.updateNetworkStatus(networkDetails);
             
-            // Log all network interfaces for debugging
+            // Check all network interfaces to find ones that support multicast
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
                 NetworkInterface nif = interfaces.nextElement();
@@ -60,47 +76,63 @@ public class MulticastManager {
             }
             
         } catch (IOException e) {
+            // If something goes wrong, show an error message
             e.printStackTrace();
             SwingUtilities.invokeLater(() -> 
                 chatWindow.appendSystemMessage("Error setting up network: " + e.getMessage()));
         }
     }
 
-    /** Encrypts and broadcasts a chat message. */
+    /**
+     * Encrypts and sends a chat message to everyone in the multicast group.
+     * 
+     * @param message The message to send
+     */
     public void sendMessage(String message) {
         try {
-            // Check message size before encryption
+            // Check if the message is very large
             if (message.length() > 4096) {
-                // Show warning for very large messages
+                // Warn the user about large messages
                 chatWindow.appendSystemMessage("Warning: Your message is very large (" + 
                                               message.length() + " characters). It may be truncated.");
             }
             
+            // Add the nickname to the message
             String full = nickname + ": " + message;
+            
+            // Encrypt the message for security
             String encrypted = EncryptionUtils.encrypt(full);
             byte[] buffer = encrypted.getBytes();
             
-            // Check if packet size exceeds UDP limit
+            // Make sure the message isn't too big for UDP
             if (buffer.length > 65507) { // Max UDP packet size
                 chatWindow.appendSystemMessage("Error: Message too large to send. Please send a shorter message.");
                 return;
             }
             
+            // Create and send the packet to the multicast group
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
             socket.send(packet);
             
-            // Update statistics
+            // Update statistics in the UI
             chatWindow.updateSentStatistics(buffer.length);
         } catch (Exception e) {
+            // If something goes wrong, show an error message
             e.printStackTrace();
             chatWindow.appendSystemMessage("Error sending message: " + e.getMessage());
         }
     }
     
-    /** Send a heartbeat to let others know we're online */
+    /**
+     * Sends a heartbeat message to let others know we're online.
+     * This is sent periodically to keep the user list updated.
+     */
     public void sendHeartbeat() {
         try {
+            // Create a special heartbeat message with our nickname
             String heartbeat = "HEARTBEAT:" + nickname;
+            
+            // Encrypt and send it
             String encrypted = EncryptionUtils.encrypt(heartbeat);
             byte[] buffer = encrypted.getBytes();
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
@@ -110,10 +142,16 @@ public class MulticastManager {
         }
     }
     
-    /** Send a goodbye message when leaving */
+    /**
+     * Sends a goodbye message when leaving the chat.
+     * This lets others know to remove us from their user list.
+     */
     public void sendGoodbye() {
         try {
+            // Create a special goodbye message with our nickname
             String goodbye = "GOODBYE:" + nickname;
+            
+            // Encrypt and send it
             String encrypted = EncryptionUtils.encrypt(goodbye);
             byte[] buffer = encrypted.getBytes();
             DatagramPacket packet = new DatagramPacket(buffer, buffer.length, group, PORT);
@@ -123,25 +161,31 @@ public class MulticastManager {
         }
     }
 
-    /** Continuously listen, decrypt, and forward to GUI. */
+    /**
+     * Continuously listens for incoming messages, decrypts them,
+     * and updates the chat window. This runs in its own thread.
+     */
     public void receiveMessages() {
         try {
-            // Create a new MulticastSocket with specific settings for better compatibility
+            // Create a special socket for receiving multicast messages
             MulticastSocket mcast = new MulticastSocket(PORT);
             mcast.setReuseAddress(true);
-            mcast.setSoTimeout(0); // No timeout for receiving
+            mcast.setSoTimeout(0); // No timeout - wait forever for messages
             
-            // Try multiple network interfaces if needed
+            // We need to join the multicast group to receive messages
             boolean joinedGroup = false;
             
-            // First try the specific interface finder
+            // First try to find the best network interface
             NetworkInterface nif = findMulticastInterface();
             if (nif != null) {
                 try {
+                    // Try to join the multicast group on this interface
                     InetSocketAddress groupAddress = new InetSocketAddress(group, PORT);
                     mcast.joinGroup(groupAddress, nif);
-                    // Update status bar with detailed network information
+                    
+                    // Show detailed network information in the status bar
                     try {
+                        // Get all IP addresses for this interface
                         Enumeration<InetAddress> addresses = nif.getInetAddresses();
                         StringBuilder ipInfo = new StringBuilder();
                         while (addresses.hasMoreElements()) {
@@ -151,6 +195,7 @@ public class MulticastManager {
                             }
                         }
                         
+                        // Create a detailed status message
                         String networkDetails = "Interface: " + nif.getDisplayName() + 
                                               " | IP: " + ipInfo + 
                                               " | Multicast: " + MULTICAST_GROUP + ":" + PORT +
@@ -161,7 +206,7 @@ public class MulticastManager {
                                               (nif.isLoopback() ? " (Loopback)" : "");
                         chatWindow.updateNetworkStatus(networkDetails);
                     } catch (Exception e) {
-                        // Fallback to simple display if error occurs
+                        // If we can't get detailed info, just show the interface name
                         chatWindow.updateNetworkStatus(nif.getDisplayName());
                     }
                     joinedGroup = true;
@@ -174,7 +219,6 @@ public class MulticastManager {
             if (!joinedGroup) {
                 try {
                     mcast.joinGroup(group);
-                    // Only update status bar, don't add message to chat area
                     chatWindow.updateNetworkStatus("Default Network Interface");
                     joinedGroup = true;
                 } catch (Exception e) {
@@ -189,9 +233,11 @@ public class MulticastManager {
                     NetworkInterface iface = interfaces.nextElement();
                     if (iface.isUp() && iface.supportsMulticast()) {
                         try {
+                            // Try to join on this interface
                             InetSocketAddress groupAddress = new InetSocketAddress(group, PORT);
                             mcast.joinGroup(groupAddress, iface);
-                            // Update status bar with detailed network information
+                            
+                            // Show detailed network information
                             try {
                                 Enumeration<InetAddress> addresses = iface.getInetAddresses();
                                 StringBuilder ipInfo = new StringBuilder();
@@ -212,7 +258,6 @@ public class MulticastManager {
                                                       (iface.isLoopback() ? " (Loopback)" : "");
                                 chatWindow.updateNetworkStatus(networkDetails);
                             } catch (Exception e) {
-                                // Fallback to simple display if error occurs
                                 chatWindow.updateNetworkStatus(iface.getDisplayName());
                             }
                             joinedGroup = true;
@@ -224,49 +269,50 @@ public class MulticastManager {
                 }
             }
             
+            // If we couldn't join any group, show an error
             if (!joinedGroup) {
-                // Only show error in status bar, not in chat
                 chatWindow.updateNetworkStatus("ERROR: No multicast interface found | Status: Disconnected");
             }
 
-            // Announce presence with compact message
+            // Let everyone know we've joined
             sendMessage("joined");
             
-            // Receive messages in a loop
-            byte[] buffer = new byte[65536]; // Increased buffer size for larger encrypted messages
+            // Now start receiving messages in a loop
+            byte[] buffer = new byte[65536]; // Large buffer for encrypted messages
             while (true) {
                 try {
+                    // Wait for a packet to arrive
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                     mcast.receive(packet);
                     
-                    // Update statistics with received packet size
+                    // Update statistics with the size of the received packet
                     chatWindow.updateReceivedStatistics(packet.getLength());
     
+                    // Convert the packet data to a string and decrypt it
                     String encrypted = new String(packet.getData(), 0, packet.getLength());
                     String plaintext = EncryptionUtils.decrypt(encrypted);
 
-                    // Handle special messages
+                    // Handle different types of messages
                     if (plaintext.startsWith("HEARTBEAT:")) {
-                        // Extract username from heartbeat
+                        // This is a heartbeat message - update the user list
                         String user = plaintext.substring("HEARTBEAT:".length());
-                        // Update user list
                         SwingUtilities.invokeLater(() -> chatWindow.addUserToList(user));
                     } else if (plaintext.startsWith("GOODBYE:")) {
-                        // Extract username from goodbye message
+                        // This is a goodbye message - remove the user from the list
                         String user = plaintext.substring("GOODBYE:".length());
-                        // Remove from user list
                         SwingUtilities.invokeLater(() -> chatWindow.removeUserFromList(user));
                     } else {
-                        // Regular message - update GUI on EDT
+                        // This is a regular chat message - add it to the chat
                         SwingUtilities.invokeLater(() -> chatWindow.appendMessage(plaintext));
                     }
                 } catch (SocketTimeoutException e) {
                     // Timeout is normal, just continue
                     continue;
                 } catch (Exception e) {
-                    // Log error but continue receiving
+                    // Log the error but keep receiving
                     System.err.println("Error processing received packet: " + e.getMessage());
-                    // Don't show decryption errors to the user to avoid cluttering the chat
+                    
+                    // Don't show decryption errors to avoid cluttering the chat
                     if (!e.getMessage().contains("Decryption failed") && 
                         !e.getMessage().contains("padding") &&
                         !e.getMessage().contains("bad key")) {
@@ -275,20 +321,24 @@ public class MulticastManager {
                 }
             }
         } catch (Exception e) {
+            // If something goes wrong with the whole receive loop
             e.printStackTrace();
-            // Only show error in status bar, not in chat
             chatWindow.updateNetworkStatus("ERROR: Connection failed | Exception: " + e.getClass().getSimpleName() + " | " + e.getMessage());
         }
     }
     
     /**
-     * Format MAC address as a readable string
+     * Formats a MAC address as a readable string (like 00:11:22:33:44:55).
+     * 
+     * @param mac The MAC address bytes
+     * @return A formatted MAC address string
      */
     private String formatMacAddress(byte[] mac) {
         if (mac == null) {
             return "Unknown";
         }
         
+        // Convert each byte to a hex value and join with colons
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < mac.length; i++) {
             sb.append(String.format("%02X", mac[i]));
@@ -300,16 +350,18 @@ public class MulticastManager {
     }
     
     /**
-     * Find a suitable network interface for multicast
+     * Finds the best network interface for multicast communication.
+     * 
+     * @return The best network interface, or null if none found
      */
     private NetworkInterface findMulticastInterface() {
         try {
-            // First try to find a non-loopback interface that supports multicast
+            // First try to find a regular network interface (not loopback)
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
                 NetworkInterface nif = interfaces.nextElement();
                 if (nif.isUp() && !nif.isLoopback() && nif.supportsMulticast()) {
-                    // Check if it has an IPv4 address
+                    // Make sure it has an IPv4 address
                     Enumeration<InetAddress> addresses = nif.getInetAddresses();
                     while (addresses.hasMoreElements()) {
                         InetAddress addr = addresses.nextElement();
@@ -320,7 +372,7 @@ public class MulticastManager {
                 }
             }
             
-            // If no suitable interface found, try loopback as last resort
+            // If no regular interface works, try loopback as a last resort
             interfaces = NetworkInterface.getNetworkInterfaces();
             while (interfaces.hasMoreElements()) {
                 NetworkInterface nif = interfaces.nextElement();
@@ -332,6 +384,7 @@ public class MulticastManager {
             e.printStackTrace();
         }
         
+        // If we couldn't find any suitable interface
         return null;
     }
 }
